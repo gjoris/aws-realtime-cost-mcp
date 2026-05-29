@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import calendar
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
@@ -43,3 +44,39 @@ def running_cost_rate(resources: list[Resource]) -> dict:
         "hourly_by_service": {k: str(v) for k, v in by_service.items()},
         "resource_count": len(resources),
     }
+
+
+def project_month_end_spend(
+    resources: list[Resource], now: Optional[datetime] = None
+) -> dict:
+    """Combine cumulative-so-far + extrapolation of current rate to month end."""
+    now = now or datetime.now(timezone.utc)
+    cumulative = sum((r.cumulative_cost for r in resources), Decimal("0"))
+    hourly = sum((r.hourly_cost for r in resources), Decimal("0"))
+
+    days_in_month = calendar.monthrange(now.year, now.month)[1]
+    end_of_month = now.replace(
+        day=days_in_month, hour=23, minute=59, second=59, microsecond=0
+    )
+    remaining_hours = Decimal(
+        str((end_of_month - now).total_seconds() / 3600)
+    )
+    if remaining_hours < 0:
+        remaining_hours = Decimal("0")
+
+    projected = cumulative + (hourly * remaining_hours)
+    return {
+        "cumulative_so_far": str(cumulative),
+        "hourly_rate": str(hourly),
+        "remaining_hours_in_month": str(remaining_hours),
+        "projected_month_end": str(projected),
+    }
+
+
+def expensive_resources(
+    resources: list[Resource], threshold_per_hour: Decimal
+) -> list[dict]:
+    """Resources whose hourly cost exceeds the threshold, sorted descending."""
+    filtered = [r for r in resources if r.hourly_cost >= threshold_per_hour]
+    filtered.sort(key=lambda r: r.hourly_cost, reverse=True)
+    return [r.to_dict() for r in filtered]
