@@ -1,0 +1,74 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Read-only IAM role assumed by aws-realtime-cost-mcp to query running
+  resources and CloudWatch metrics. Deploy via StackSet across every member
+  account that should be visible to the MCP server.
+
+Parameters:
+  RoleName:
+    Type: String
+    Default: AWSRealtimeCostReader
+    Description: Name of the role. Must match AWS_REALTIME_COST_ROLE_NAME on the caller side.
+  TrustedPrincipalArn:
+    Type: String
+    Description: >
+      ARN of the principal allowed to assume this role. Typically the IAM user
+      or role used by the MCP server's home account
+      (e.g. arn:aws:iam::111122223333:role/CostMcpCaller).
+
+Resources:
+  ReaderRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref TrustedPrincipalArn
+            Action: sts:AssumeRole
+      MaxSessionDuration: 3600
+      Policies:
+        - PolicyName: ReadOnlyForRealtimeCost
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: DescribeRunningResources
+                Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                  - ec2:DescribeNatGateways
+                  - rds:DescribeDBInstances
+                  - sagemaker:ListEndpoints
+                  - sagemaker:DescribeEndpoint
+                  - sagemaker:DescribeEndpointConfig
+                Resource: "*"
+              - Sid: ProbeUncoveredServices
+                Effect: Allow
+                Action:
+                  - opensearch:ListDomainNames
+                  - elasticache:DescribeCacheClusters
+                  - kafka:ListClustersV2
+                  - redshift:DescribeClusters
+                  - neptune-db:DescribeDBClusters
+                  - rds:DescribeDBClusters
+                Resource: "*"
+              - Sid: ReadCloudWatchMetrics
+                Effect: Allow
+                Action:
+                  - cloudwatch:GetMetricData
+                  - cloudwatch:ListMetrics
+                Resource: "*"
+              - Sid: ReadPricing
+                Effect: Allow
+                Action:
+                  - pricing:GetProducts
+                  - pricing:DescribeServices
+                  - pricing:GetAttributeValues
+                Resource: "*"
+
+Outputs:
+  RoleArn:
+    Description: ARN of the reader role
+    Value: !GetAtt ReaderRole.Arn
